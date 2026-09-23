@@ -225,8 +225,11 @@ public class CommitStatusUpdater {
         if (attachStatusToMergeRequestPipelineOverride != null) {
             return attachStatusToMergeRequestPipelineOverride;
         }
-        GitLabConnectionConfig config =
-                (GitLabConnectionConfig) Jenkins.get().getDescriptor(GitLabConnectionConfig.class);
+        Jenkins jenkins = Jenkins.getInstance();
+        if (jenkins == null) {
+            return false;
+        }
+        GitLabConnectionConfig config = (GitLabConnectionConfig) jenkins.getDescriptor(GitLabConnectionConfig.class);
         return config != null && config.isAttachStatusToMergeRequestPipeline();
     }
 
