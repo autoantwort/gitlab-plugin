@@ -14,9 +14,9 @@ f.advanced() {
     }
 
     // Nullable Boolean: null = inherit the plugin's global default
-    // (GitLabConnectionConfig#isPinCommitStatusToPipeline). This checkbox only
+    // (GitLabConnectionConfig#isAttachStatusToMergeRequestPipeline). This checkbox only
     // round-trips true/false; leave it alone in the UI to keep inheriting the default.
-    f.entry(title:"Pin commit status to resolved pipeline", field: "pinToPipeline") {
+    f.entry(title:"Attach commit status to merge request pipeline", field: "attachStatusToMergeRequestPipeline") {
         f.checkbox()
     }
 }

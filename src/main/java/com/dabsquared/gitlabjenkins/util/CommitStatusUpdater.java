@@ -56,8 +56,9 @@ public class CommitStatusUpdater {
 
     /**
      * Same as the six-arg overload above, but lets the caller explicitly opt in or out of
-     * pinning the status to a resolved pipeline (see resolveTargetPipelineId), overriding
-     * the {@link com.dabsquared.gitlabjenkins.connection.GitLabConnectionConfig} global
+     * attaching the status to the commit's merge request pipeline (see
+     * resolveMergeRequestPipelineId), overriding the
+     * {@link com.dabsquared.gitlabjenkins.connection.GitLabConnectionConfig} global
      * default for this one call. Pass null to just use that global default.
      */
     public static void updateCommitStatus(
@@ -67,7 +68,7 @@ public class CommitStatusUpdater {
             String name,
             List<GitLabBranchBuild> gitLabBranchBuilds,
             GitLabConnectionProperty connection,
-            Boolean pinToPipeline) {
+            Boolean attachStatusToMergeRequestPipeline) {
         GitLabClient client;
         if (connection != null) {
             client = connection.getClient();
@@ -116,8 +117,8 @@ public class CommitStatusUpdater {
                                 Level.INFO,
                                 "Updating build '%s' to '%s'".formatted(gitLabBranchBuild.getProjectId(), state));
                         Integer pipelineId = null;
-                        if (isPinCommitStatusToPipelineEnabled(pinToPipeline)) {
-                            pipelineId = resolveTargetPipelineId(
+                        if (shouldAttachStatusToMergeRequestPipeline(attachStatusToMergeRequestPipeline)) {
+                            pipelineId = resolveMergeRequestPipelineId(
                                     current_client,
                                     gitLabBranchBuild.getProjectId(),
                                     gitLabBranchBuild.getRevisionHash());
@@ -152,11 +153,18 @@ public class CommitStatusUpdater {
         updateCommitStatus(build, listener, state, name, (Boolean) null);
     }
 
-    /** Same as the four-arg overload above, but with an explicit pinToPipeline override; see the seven-arg overload. */
+    /**
+     * Same as the four-arg overload above, but with an explicit
+     * attachStatusToMergeRequestPipeline override; see the seven-arg overload.
+     */
     public static void updateCommitStatus(
-            Run<?, ?> build, TaskListener listener, BuildState state, String name, Boolean pinToPipeline) {
+            Run<?, ?> build,
+            TaskListener listener,
+            BuildState state,
+            String name,
+            Boolean attachStatusToMergeRequestPipeline) {
         try {
-            updateCommitStatus(build, listener, state, name, null, null, pinToPipeline);
+            updateCommitStatus(build, listener, state, name, null, null, attachStatusToMergeRequestPipeline);
         } catch (IllegalStateException e) {
             printf(listener, "Failed to update GitLab commit status: %s%n", e.getMessage());
         }
@@ -179,48 +187,45 @@ public class CommitStatusUpdater {
     }
 
     /**
-     * Resolves whether this particular status update should be pinned to a resolved
-     * pipeline: an explicit per-call override (from a gitlabCommitStatus /
+     * Resolves whether this particular status update should be attached to the commit's
+     * merge request pipeline: an explicit per-call override (from a gitlabCommitStatus /
      * updateGitlabCommitStatus step) wins if given, otherwise falls back to the plugin's
-     * global default (GitLabConnectionConfig#isPinCommitStatusToPipeline, off unless an
-     * administrator opts in).
+     * global default (GitLabConnectionConfig#isAttachStatusToMergeRequestPipeline, off
+     * unless an administrator opts in).
      */
-    private static boolean isPinCommitStatusToPipelineEnabled(Boolean pinToPipelineOverride) {
-        if (pinToPipelineOverride != null) {
-            return pinToPipelineOverride;
+    private static boolean shouldAttachStatusToMergeRequestPipeline(Boolean attachStatusToMergeRequestPipelineOverride) {
+        if (attachStatusToMergeRequestPipelineOverride != null) {
+            return attachStatusToMergeRequestPipelineOverride;
         }
         GitLabConnectionConfig config =
                 (GitLabConnectionConfig) Jenkins.get().getDescriptor(GitLabConnectionConfig.class);
-        return config != null && config.isPinCommitStatusToPipeline();
+        return config != null && config.isAttachStatusToMergeRequestPipeline();
     }
 
     /**
-     * Looks up the most relevant GitLab pipeline for this commit right now, so the status
-     * update can be pinned to it explicitly instead of letting GitLab pick (or spin up a
-     * throwaway "external" pipeline) based on sha+ref+context alone. Called fresh before
-     * EVERY status update (not just the first), so a later call - e.g. "success", posted
-     * after GitLab's own pipeline has since been created - still finds and targets the
-     * correct, up-to-date pipeline, even though an earlier call (e.g. "pending") may have
-     * found nothing yet and been left for GitLab to handle on its own via the old
-     * fallback path (returning null here preserves that exact old behavior).
+     * Looks up this commit's merge_request_event pipeline right now, so the status update
+     * can target it explicitly instead of letting GitLab pick (or spin up a throwaway
+     * "external" pipeline) based on sha+ref+context alone. Called fresh before EVERY status
+     * update (not just the first), so a later call - e.g. "success", posted after GitLab's
+     * own MR pipeline has since been created - still finds and targets the correct,
+     * up-to-date pipeline, even though an earlier call (e.g. "pending") may have found
+     * nothing yet and been left for GitLab to handle on its own via the old fallback path
+     * (returning null here preserves that exact old behavior).
      *
-     * Prefers a merge_request_event pipeline (the actual candidate for an MR's
-     * head_pipeline) over a plain push pipeline, and ignores GitLab's own throwaway
-     * "external" pipelines (the ones created by a status update that had no real
-     * pipeline to attach to) so this never just keeps re-targeting one of those.
+     * Deliberately scoped to merge_request_event pipelines only, never a plain push
+     * pipeline or GitLab's own throwaway "external" pipelines (the ones created by a status
+     * update that had no real pipeline to attach to): the whole point of this is keeping a
+     * build's result visible to the MR's head_pipeline, which a push pipeline isn't.
      */
-    private static Integer resolveTargetPipelineId(GitLabClient client, String projectId, String sha) {
+    private static Integer resolveMergeRequestPipelineId(GitLabClient client, String projectId, String sha) {
         try {
             List<Pipeline> pipelines = client.getPipelines(projectId, sha);
             if (pipelines == null || pipelines.isEmpty()) {
                 return null;
             }
-            Comparator<Pipeline> byPreference = Comparator.<Pipeline, Integer>comparing(
-                            p -> "merge_request_event".equals(p.getSource()) ? 1 : 0)
-                    .thenComparing(p -> p.getCreatedAt() == null ? "" : p.getCreatedAt());
             return pipelines.stream()
-                    .filter(p -> !"external".equals(p.getSource()))
-                    .max(byPreference)
+                    .filter(p -> "merge_request_event".equals(p.getSource()))
+                    .max(Comparator.comparing(p -> p.getCreatedAt() == null ? "" : p.getCreatedAt()))
                     .map(Pipeline::getId)
                     .orElse(null);
         } catch (WebApplicationException | ProcessingException e) {
