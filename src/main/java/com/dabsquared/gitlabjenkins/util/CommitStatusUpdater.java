@@ -2,7 +2,6 @@ package com.dabsquared.gitlabjenkins.util;
 
 import static com.dabsquared.gitlabjenkins.connection.GitLabConnectionProperty.getClient;
 
-import com.dabsquared.gitlabjenkins.cause.CauseData;
 import com.dabsquared.gitlabjenkins.cause.GitLabWebHookCause;
 import com.dabsquared.gitlabjenkins.connection.GitLabConnectionProperty;
 import com.dabsquared.gitlabjenkins.gitlab.api.GitLabClient;
@@ -94,11 +93,34 @@ public class CommitStatusUpdater {
                         LOGGER.log(
                                 Level.INFO,
                                 "Updating build '%s' to '%s'".formatted(gitLabBranchBuild.getProjectId(), state));
+                        // Deliberately not passing a ref here (see getBuildBranchOrTag).
+                        // GitLab treats (sha, ref, context) as an upsert key: with ref
+                        // set, every update for this build's whole lifetime (pending ->
+                        // running -> success) keeps mutating the SAME status row in
+                        // place, forever pinned to whichever pipeline existed for that
+                        // sha+ref+context at the very first call - even after GitLab's
+                        // own real pipeline for this commit shows up later. Omitting ref
+                        // makes each call independently search for an existing pipeline
+                        // on this sha (falling back to a throwaway "external" one only
+                        // if none exists yet), so the LAST call - typically success/
+                        // failed, posted after GitLab's own pipeline has had time to be
+                        // created - lands on the right one even if an earlier call
+                        // couldn't.
+                        //
+                        // Caveat: GitLab's docs describe the pipeline lookup as
+                        // "existing pipelines are searched before creating new one" but
+                        // don't specify the selection order among several candidates, so
+                        // this leans on observed-but-undocumented behavior rather than a
+                        // guaranteed contract. It's also less precise than pipeline_id
+                        // when the same sha exists on more than one ref (e.g. a
+                        // fast-forwarded commit shared across branches): dropping ref
+                        // entirely removes that disambiguation, whereas an explicit
+                        // pipeline_id looked up via the Pipelines API doesn't.
                         current_client.changeBuildStatus(
                                 gitLabBranchBuild.getProjectId(),
                                 gitLabBranchBuild.getRevisionHash(),
                                 state,
-                                getBuildBranchOrTag(build, environment),
+                                null,
                                 current_build_name,
                                 buildUrl,
                                 state.name());
@@ -153,17 +175,6 @@ public class CommitStatusUpdater {
                     "Project (%s) and commit (%s) combination not found".formatted(gitlabProjectId, commitHash));
             return false;
         }
-    }
-
-    private static String getBuildBranchOrTag(Run<?, ?> build, EnvVars environment) {
-        GitLabWebHookCause cause = build.getCause(GitLabWebHookCause.class);
-        if (cause == null) {
-            return environment == null ? null : environment.get("BRANCH_NAME", null);
-        }
-        if (cause.getData().getActionType() == CauseData.ActionType.TAG_PUSH) {
-            return StringUtils.removeStart(cause.getData().getSourceBranch(), "refs/tags/");
-        }
-        return cause.getData().getSourceBranch();
     }
 
     private static String getBuildUrl(Run<?, ?> build) {
