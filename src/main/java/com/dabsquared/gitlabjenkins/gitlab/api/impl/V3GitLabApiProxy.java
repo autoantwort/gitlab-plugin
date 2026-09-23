@@ -126,38 +126,11 @@ interface V3GitLabApiProxy extends GitLabApiProxy {
             @FormParam("merge_requests_events") Boolean mergeRequestEvents,
             @FormParam("note_events") Boolean noteEvents);
 
-    @POST
-    @Produces(MediaType.APPLICATION_JSON)
-    @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
-    @Path("/projects/{projectId}/statuses/{sha}")
-    @Override
-    void changeBuildStatus(
-            @PathParam("projectId") @Encoded String projectId,
-            @PathParam("sha") @Encoded String sha,
-            @FormParam("state") BuildState state,
-            @FormParam("ref") String ref,
-            @FormParam("context") String context,
-            @FormParam("target_url") String targetUrl,
-            @FormParam("description") String description);
-
-    @POST
-    @Produces(MediaType.APPLICATION_JSON)
-    @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
-    @Path("/projects/{projectId}/statuses/{sha}")
-    @Override
-    void changeBuildStatus(
-            @PathParam("projectId") @Encoded Integer projectId,
-            @PathParam("sha") @Encoded String sha,
-            @FormParam("state") BuildState state,
-            @FormParam("ref") String ref,
-            @FormParam("context") String context,
-            @FormParam("target_url") String targetUrl,
-            @FormParam("description") String description);
-
     // GitLab's v3 API was removed years ago and this code path is effectively
     // legacy/unreachable against any modern GitLab instance; pipeline_id is
     // accepted here purely so V3GitLabApiProxy still satisfies the shared
-    // GitLabApiProxy interface. Not verified against a real v3 server.
+    // GitLabApiProxy interface. Not verified against a real v3 server. Only
+    // one REST-mapped method per projectId type (see V4GitLabApiProxy for why).
     @POST
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
@@ -306,12 +279,6 @@ interface V3GitLabApiProxy extends GitLabApiProxy {
     @Path("/projects/{projectId}/labels")
     @Override
     List<Label> getLabels(@PathParam("projectId") @Encoded String projectId);
-
-    @GET
-    @Produces(MediaType.APPLICATION_JSON)
-    @Path("/projects/{projectId}/pipelines")
-    @Override
-    List<Pipeline> getPipelines(@PathParam("projectId") @Encoded String projectId);
 
     @GET
     @Produces(MediaType.APPLICATION_JSON)

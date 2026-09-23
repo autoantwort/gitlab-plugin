@@ -40,24 +40,6 @@ interface GitLabApiProxy {
             String ref,
             String context,
             String targetUrl,
-            String description);
-
-    void changeBuildStatus(
-            Integer projectId,
-            String sha,
-            BuildState state,
-            String ref,
-            String context,
-            String targetUrl,
-            String description);
-
-    void changeBuildStatus(
-            String projectId,
-            String sha,
-            BuildState state,
-            String ref,
-            String context,
-            String targetUrl,
             String description,
             Integer pipelineId);
 
@@ -99,8 +81,6 @@ interface GitLabApiProxy {
     User updateUser(String userId, String email, String username, String name, String password);
 
     List<Label> getLabels(String projectId);
-
-    List<Pipeline> getPipelines(String projectName);
 
     List<Pipeline> getPipelines(String projectName, String sha);
 
