@@ -4,6 +4,7 @@ import static com.dabsquared.gitlabjenkins.connection.GitLabConnectionProperty.g
 
 import com.dabsquared.gitlabjenkins.cause.CauseData;
 import com.dabsquared.gitlabjenkins.cause.GitLabWebHookCause;
+import com.dabsquared.gitlabjenkins.connection.GitLabConnectionConfig;
 import com.dabsquared.gitlabjenkins.connection.GitLabConnectionProperty;
 import com.dabsquared.gitlabjenkins.gitlab.api.GitLabClient;
 import com.dabsquared.gitlabjenkins.gitlab.api.model.BuildState;
@@ -27,6 +28,7 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import jenkins.model.Jenkins;
 import jenkins.plugins.git.AbstractGitSCMSource;
 import jenkins.scm.api.SCMRevision;
 import jenkins.scm.api.SCMRevisionAction;
@@ -49,6 +51,23 @@ public class CommitStatusUpdater {
             String name,
             List<GitLabBranchBuild> gitLabBranchBuilds,
             GitLabConnectionProperty connection) {
+        updateCommitStatus(build, listener, state, name, gitLabBranchBuilds, connection, null);
+    }
+
+    /**
+     * Same as the six-arg overload above, but lets the caller explicitly opt in or out of
+     * pinning the status to a resolved pipeline (see resolveTargetPipelineId), overriding
+     * the {@link com.dabsquared.gitlabjenkins.connection.GitLabConnectionConfig} global
+     * default for this one call. Pass null to just use that global default.
+     */
+    public static void updateCommitStatus(
+            Run<?, ?> build,
+            TaskListener listener,
+            BuildState state,
+            String name,
+            List<GitLabBranchBuild> gitLabBranchBuilds,
+            GitLabConnectionProperty connection,
+            Boolean pinToPipeline) {
         GitLabClient client;
         if (connection != null) {
             client = connection.getClient();
@@ -96,10 +115,13 @@ public class CommitStatusUpdater {
                         LOGGER.log(
                                 Level.INFO,
                                 "Updating build '%s' to '%s'".formatted(gitLabBranchBuild.getProjectId(), state));
-                        Integer pipelineId = resolveTargetPipelineId(
-                                current_client,
-                                gitLabBranchBuild.getProjectId(),
-                                gitLabBranchBuild.getRevisionHash());
+                        Integer pipelineId = null;
+                        if (isPinCommitStatusToPipelineEnabled(pinToPipeline)) {
+                            pipelineId = resolveTargetPipelineId(
+                                    current_client,
+                                    gitLabBranchBuild.getProjectId(),
+                                    gitLabBranchBuild.getRevisionHash());
+                        }
                         current_client.changeBuildStatus(
                                 gitLabBranchBuild.getProjectId(),
                                 gitLabBranchBuild.getRevisionHash(),
@@ -127,8 +149,14 @@ public class CommitStatusUpdater {
     }
 
     public static void updateCommitStatus(Run<?, ?> build, TaskListener listener, BuildState state, String name) {
+        updateCommitStatus(build, listener, state, name, (Boolean) null);
+    }
+
+    /** Same as the four-arg overload above, but with an explicit pinToPipeline override; see the seven-arg overload. */
+    public static void updateCommitStatus(
+            Run<?, ?> build, TaskListener listener, BuildState state, String name, Boolean pinToPipeline) {
         try {
-            updateCommitStatus(build, listener, state, name, null, null);
+            updateCommitStatus(build, listener, state, name, null, null, pinToPipeline);
         } catch (IllegalStateException e) {
             printf(listener, "Failed to update GitLab commit status: %s%n", e.getMessage());
         }
@@ -148,6 +176,22 @@ public class CommitStatusUpdater {
         } else {
             listener.getLogger().printf(message, args);
         }
+    }
+
+    /**
+     * Resolves whether this particular status update should be pinned to a resolved
+     * pipeline: an explicit per-call override (from a gitlabCommitStatus /
+     * updateGitlabCommitStatus step) wins if given, otherwise falls back to the plugin's
+     * global default (GitLabConnectionConfig#isPinCommitStatusToPipeline, off unless an
+     * administrator opts in).
+     */
+    private static boolean isPinCommitStatusToPipelineEnabled(Boolean pinToPipelineOverride) {
+        if (pinToPipelineOverride != null) {
+            return pinToPipelineOverride;
+        }
+        GitLabConnectionConfig config =
+                (GitLabConnectionConfig) Jenkins.get().getDescriptor(GitLabConnectionConfig.class);
+        return config != null && config.isPinCommitStatusToPipeline();
     }
 
     /**

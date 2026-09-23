@@ -28,6 +28,7 @@ public class UpdateGitLabCommitStatusStep extends Step {
 
     private String name;
     private BuildState state;
+    private Boolean pinToPipeline;
 
     @DataBoundConstructor
     public UpdateGitLabCommitStatusStep(String name, BuildState state) {
@@ -58,6 +59,20 @@ public class UpdateGitLabCommitStatusStep extends Step {
         this.state = state;
     }
 
+    public Boolean getPinToPipeline() {
+        return pinToPipeline;
+    }
+
+    /**
+     * Explicitly opt this call in or out of pinning the status to a resolved pipeline,
+     * overriding the plugin's global default (GitLabConnectionConfig). Leave unset to
+     * just use that global default.
+     */
+    @DataBoundSetter
+    public void setPinToPipeline(Boolean pinToPipeline) {
+        this.pinToPipeline = pinToPipeline;
+    }
+
     public static class UpdateGitLabCommitStatusStepExecution extends AbstractSynchronousStepExecution<Void> {
         private static final long serialVersionUID = 1;
 
@@ -74,7 +89,7 @@ public class UpdateGitLabCommitStatusStep extends Step {
         @Override
         protected Void run() throws Exception {
             final String name = StringUtils.isEmpty(step.name) ? "jenkins" : step.name;
-            CommitStatusUpdater.updateCommitStatus(run, getTaskListener(), step.state, name);
+            CommitStatusUpdater.updateCommitStatus(run, getTaskListener(), step.state, name, step.pinToPipeline);
             PendingBuildsAction action = run.getAction(PendingBuildsAction.class);
             if (action != null) {
                 action.startBuild(name);

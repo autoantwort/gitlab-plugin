@@ -6,4 +6,14 @@
   <f:entry title="${%Build state}" field="state">
     <f:select/>
   </f:entry>
+  <!--
+    pinToPipeline is a nullable Boolean (null = inherit the plugin's global default,
+    set via GitLabConnectionConfig): a plain f:checkbox only round-trips true/false, so
+    the "inherit" state is reachable from Pipeline script (pinToPipeline: null / simply
+    omitting the setter call) but not from this classic form. That's an acceptable gap
+    here since this step is normally driven from a Jenkinsfile, not this form.
+  -->
+  <f:entry title="${%Pin commit status to resolved pipeline}" field="pinToPipeline" help="/plugin/gitlab-plugin/help/help-pinToPipeline.html">
+    <f:checkbox/>
+  </f:entry>
 </j:jelly>

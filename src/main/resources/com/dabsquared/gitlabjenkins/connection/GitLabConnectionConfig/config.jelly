@@ -4,6 +4,9 @@
     <f:entry title="${%Enable authentication for '/project' end-point}" field="useAuthenticatedEndpoint">
       <f:checkbox  default="true"/>
     </f:entry>
+    <f:entry title="${%Pin commit status updates to a resolved pipeline}" field="pinCommitStatusToPipeline">
+      <f:checkbox default="false"/>
+    </f:entry>
     <f:entry title="${%GitLab connections}">
       <f:repeatableProperty field="connections">
         <f:block>
