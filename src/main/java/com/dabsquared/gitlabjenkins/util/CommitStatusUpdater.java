@@ -123,22 +123,50 @@ public class CommitStatusUpdater {
                                     gitLabBranchBuild.getProjectId(),
                                     gitLabBranchBuild.getRevisionHash());
                         }
+                        // GitLab's Commit Status API requires pipeline_id, sha and ref to all
+                        // agree on the SAME pipeline - confirmed empirically: passing a real,
+                        // valid pipeline_id alongside a ref that belongs to a DIFFERENT
+                        // pipeline for that sha (e.g. the branch name instead of a merge
+                        // request pipeline's refs/merge-requests/N/head) gets rejected with
+                        // "404 Pipeline for pipeline_id, sha and ref Not Found" even though
+                        // the pipeline_id itself is entirely valid. Once we've resolved a
+                        // pipeline_id, ref becomes redundant (and actively wrong, since the
+                        // build's branch name never matches a merge request pipeline's own
+                        // ref) - omit it so GitLab derives ref from the pipeline instead.
+                        String ref = pipelineId == null ? getBuildBranchOrTag(build, environment) : null;
                         current_client.changeBuildStatus(
                                 gitLabBranchBuild.getProjectId(),
                                 gitLabBranchBuild.getRevisionHash(),
                                 state,
-                                getBuildBranchOrTag(build, environment),
+                                ref,
                                 current_build_name,
                                 buildUrl,
                                 state.name(),
                                 pipelineId);
                     }
                 } catch (WebApplicationException | ProcessingException e) {
+                    // e.getMessage() alone (e.g. "HTTP 404 Not Found") is often too vague to
+                    // debug from the build console - GitLab's actual JSON error body (e.g.
+                    // "404 Pipeline for pipeline_id, sha and ref Not Found") is much more
+                    // specific and is what actually diagnosed this class of bug. Read it
+                    // once, defensively, since the response entity stream can only be
+                    // consumed a single time and may not be a WebApplicationException at all.
+                    String detail = e.getMessage();
+                    if (e instanceof WebApplicationException wae && wae.getResponse() != null) {
+                        try {
+                            String body = wae.getResponse().readEntity(String.class);
+                            if (StringUtils.isNotBlank(body)) {
+                                detail = detail + " - " + body;
+                            }
+                        } catch (RuntimeException ignored) {
+                            // response entity already consumed or unavailable; fall back to detail as-is
+                        }
+                    }
                     printf(
                             listener,
                             "Failed to update GitLab commit status for project '%s': %s%n",
                             gitLabBranchBuild.getProjectId(),
-                            e.getMessage());
+                            detail);
                     LOGGER.log(
                             Level.SEVERE,
                             "Failed to update GitLab commit status for project '%s'"
