@@ -7,6 +7,7 @@ import com.dabsquared.gitlabjenkins.cause.GitLabWebHookCause;
 import com.dabsquared.gitlabjenkins.connection.GitLabConnectionProperty;
 import com.dabsquared.gitlabjenkins.gitlab.api.GitLabClient;
 import com.dabsquared.gitlabjenkins.gitlab.api.model.BuildState;
+import com.dabsquared.gitlabjenkins.gitlab.api.model.Pipeline;
 import com.dabsquared.gitlabjenkins.workflow.GitLabBranchBuild;
 import hudson.EnvVars;
 import hudson.model.*;
@@ -20,6 +21,7 @@ import jakarta.ws.rs.WebApplicationException;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.Set;
@@ -94,6 +96,10 @@ public class CommitStatusUpdater {
                         LOGGER.log(
                                 Level.INFO,
                                 "Updating build '%s' to '%s'".formatted(gitLabBranchBuild.getProjectId(), state));
+                        Integer pipelineId = resolveTargetPipelineId(
+                                current_client,
+                                gitLabBranchBuild.getProjectId(),
+                                gitLabBranchBuild.getRevisionHash());
                         current_client.changeBuildStatus(
                                 gitLabBranchBuild.getProjectId(),
                                 gitLabBranchBuild.getRevisionHash(),
@@ -101,7 +107,8 @@ public class CommitStatusUpdater {
                                 getBuildBranchOrTag(build, environment),
                                 current_build_name,
                                 buildUrl,
-                                state.name());
+                                state.name(),
+                                pipelineId);
                     }
                 } catch (WebApplicationException | ProcessingException e) {
                     printf(
@@ -140,6 +147,44 @@ public class CommitStatusUpdater {
             LOGGER.log(Level.FINE, "failed to print message {0} due to null TaskListener", message.formatted(args));
         } else {
             listener.getLogger().printf(message, args);
+        }
+    }
+
+    /**
+     * Looks up the most relevant GitLab pipeline for this commit right now, so the status
+     * update can be pinned to it explicitly instead of letting GitLab pick (or spin up a
+     * throwaway "external" pipeline) based on sha+ref+context alone. Called fresh before
+     * EVERY status update (not just the first), so a later call - e.g. "success", posted
+     * after GitLab's own pipeline has since been created - still finds and targets the
+     * correct, up-to-date pipeline, even though an earlier call (e.g. "pending") may have
+     * found nothing yet and been left for GitLab to handle on its own via the old
+     * fallback path (returning null here preserves that exact old behavior).
+     *
+     * Prefers a merge_request_event pipeline (the actual candidate for an MR's
+     * head_pipeline) over a plain push pipeline, and ignores GitLab's own throwaway
+     * "external" pipelines (the ones created by a status update that had no real
+     * pipeline to attach to) so this never just keeps re-targeting one of those.
+     */
+    private static Integer resolveTargetPipelineId(GitLabClient client, String projectId, String sha) {
+        try {
+            List<Pipeline> pipelines = client.getPipelines(projectId, sha);
+            if (pipelines == null || pipelines.isEmpty()) {
+                return null;
+            }
+            Comparator<Pipeline> byPreference = Comparator.<Pipeline, Integer>comparing(
+                            p -> "merge_request_event".equals(p.getSource()) ? 1 : 0)
+                    .thenComparing(p -> p.getCreatedAt() == null ? "" : p.getCreatedAt());
+            return pipelines.stream()
+                    .filter(p -> !"external".equals(p.getSource()))
+                    .max(byPreference)
+                    .map(Pipeline::getId)
+                    .orElse(null);
+        } catch (WebApplicationException | ProcessingException e) {
+            LOGGER.log(
+                    Level.WARNING,
+                    "Failed to resolve target pipeline for %s@%s, falling back to default GitLab behavior: %s"
+                            .formatted(projectId, sha, e.getMessage()));
+            return null;
         }
     }
 

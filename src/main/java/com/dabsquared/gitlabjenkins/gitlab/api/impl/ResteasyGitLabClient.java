@@ -128,6 +128,32 @@ final class ResteasyGitLabClient implements GitLabClient {
     }
 
     @Override
+    public void changeBuildStatus(
+            String projectId,
+            String sha,
+            BuildState state,
+            String ref,
+            String context,
+            String targetUrl,
+            String description,
+            Integer pipelineId) {
+        api.changeBuildStatus(projectId, sha, state, ref, context, targetUrl, description, pipelineId);
+    }
+
+    @Override
+    public void changeBuildStatus(
+            Integer projectId,
+            String sha,
+            BuildState state,
+            String ref,
+            String context,
+            String targetUrl,
+            String description,
+            Integer pipelineId) {
+        api.changeBuildStatus(projectId, sha, state, ref, context, targetUrl, description, pipelineId);
+    }
+
+    @Override
     public void getCommit(String projectId, String sha) {
         api.getCommit(projectId, sha);
     }
@@ -196,6 +222,11 @@ final class ResteasyGitLabClient implements GitLabClient {
     @Override
     public List<Pipeline> getPipelines(String projectName) {
         return api.getPipelines(projectName);
+    }
+
+    @Override
+    public List<Pipeline> getPipelines(String projectName, String sha) {
+        return api.getPipelines(projectName, sha);
     }
 
     @Override

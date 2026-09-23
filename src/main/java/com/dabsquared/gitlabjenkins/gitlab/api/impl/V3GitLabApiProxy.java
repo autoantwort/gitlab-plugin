@@ -154,6 +154,40 @@ interface V3GitLabApiProxy extends GitLabApiProxy {
             @FormParam("target_url") String targetUrl,
             @FormParam("description") String description);
 
+    // GitLab's v3 API was removed years ago and this code path is effectively
+    // legacy/unreachable against any modern GitLab instance; pipeline_id is
+    // accepted here purely so V3GitLabApiProxy still satisfies the shared
+    // GitLabApiProxy interface. Not verified against a real v3 server.
+    @POST
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
+    @Path("/projects/{projectId}/statuses/{sha}")
+    @Override
+    void changeBuildStatus(
+            @PathParam("projectId") @Encoded String projectId,
+            @PathParam("sha") @Encoded String sha,
+            @FormParam("state") BuildState state,
+            @FormParam("ref") String ref,
+            @FormParam("context") String context,
+            @FormParam("target_url") String targetUrl,
+            @FormParam("description") String description,
+            @FormParam("pipeline_id") Integer pipelineId);
+
+    @POST
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
+    @Path("/projects/{projectId}/statuses/{sha}")
+    @Override
+    void changeBuildStatus(
+            @PathParam("projectId") @Encoded Integer projectId,
+            @PathParam("sha") @Encoded String sha,
+            @FormParam("state") BuildState state,
+            @FormParam("ref") String ref,
+            @FormParam("context") String context,
+            @FormParam("target_url") String targetUrl,
+            @FormParam("description") String description,
+            @FormParam("pipeline_id") Integer pipelineId);
+
     @GET
     @Produces(MediaType.APPLICATION_JSON)
     @Path("/projects/{projectId}/repository/commits/{sha}")
@@ -278,6 +312,13 @@ interface V3GitLabApiProxy extends GitLabApiProxy {
     @Path("/projects/{projectId}/pipelines")
     @Override
     List<Pipeline> getPipelines(@PathParam("projectId") @Encoded String projectId);
+
+    @GET
+    @Produces(MediaType.APPLICATION_JSON)
+    @Path("/projects/{projectId}/pipelines")
+    @Override
+    List<Pipeline> getPipelines(
+            @PathParam("projectId") @Encoded String projectId, @QueryParam("sha") @Encoded String sha);
 
     @GET
     @Produces(MediaType.APPLICATION_JSON)
